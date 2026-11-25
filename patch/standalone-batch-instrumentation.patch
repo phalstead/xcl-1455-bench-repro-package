@@ -1,0 +1,140 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index 93cdcb6..e9c11ca 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -283,6 +283,44 @@ static InterpRun RunInterp(Gpu& g, ID3D12PipelineState* pso, const std::vector<u
+     R.ok=true; return R;
+ }
+ 
++struct BatchRun { bool ok=false; double batchGpuMs=0; double batchWallMs=0; uint32_t s0=0; bool v1All55=false; uint32_t status=0,steps=0; std::string err; };
++static BatchRun RunInterpBatch(Gpu& g, ID3D12PipelineState* pso, const std::vector<uint32_t>& prog, const std::vector<uint32_t>& init, const std::vector<uint32_t>& memIn, const RunCfg& cfg, int batch){
++    BatchRun R{}; batch = std::max(1,batch);
++    size_t progBytes=std::max<size_t>(prog.size()*4,16); size_t stateBytes=std::max<size_t>(init.size()*4,16); size_t outBytes=STATE_OUT_DWORDS*4; size_t memBytes=std::max<size_t>(cfg.memWords*4,256);
++    auto progBuf=MakeBuf(g.device.Get(),progBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_COPY_DEST);
++    auto initBuf=MakeBuf(g.device.Get(),stateBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_COPY_DEST);
++    auto outBuf=MakeBuf(g.device.Get(),outBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
++    auto memBuf=MakeBuf(g.device.Get(),memBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
++    auto cbBuf=MakeBuf(g.device.Get(),256,D3D12_HEAP_TYPE_UPLOAD,D3D12_RESOURCE_STATE_GENERIC_READ);
++    if(!prog.empty()) Upload(g,progBuf.Get(),prog.data(),prog.size()*4,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE); else { uint32_t z=0; Upload(g,progBuf.Get(),&z,4,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE); }
++    Upload(g,initBuf.Get(),init.data(),init.size()*4,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
++    std::vector<uint32_t> memInit(cfg.memWords,0); for(size_t i=0;i<memIn.size()&&i<memInit.size();++i) memInit[i]=memIn[i];
++    Upload(g,memBuf.Get(),memInit.data(),memBytes,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
++    struct CB{ uint32_t ProgWords,MaxSteps,WaveCount,MemWords; } cb{(uint32_t)prog.size(),cfg.maxSteps,cfg.waves,cfg.memWords};
++    void* m=nullptr; D3D12_RANGE zr{0,0}; Check(cbBuf->Map(0,&zr,&m),"MapCB"); memcpy(m,&cb,sizeof(cb)); cbBuf->Unmap(0,nullptr);
++    EnsureAlloc(g); Check(g.list->Reset(g.alloc.Get(),pso),"RL");
++    g.list->SetComputeRootSignature(g.rsInterp.Get());
++    g.list->SetComputeRootShaderResourceView(0,progBuf->GetGPUVirtualAddress());
++    g.list->SetComputeRootShaderResourceView(1,initBuf->GetGPUVirtualAddress());
++    g.list->SetComputeRootUnorderedAccessView(2,outBuf->GetGPUVirtualAddress());
++    g.list->SetComputeRootUnorderedAccessView(3,memBuf->GetGPUVirtualAddress());
++    g.list->SetComputeRootConstantBufferView(4,cbBuf->GetGPUVirtualAddress());
++    auto uav=[&](ID3D12Resource* r){ D3D12_RESOURCE_BARRIER b{}; b.Type=D3D12_RESOURCE_BARRIER_TYPE_UAV; b.UAV.pResource=r; g.list->ResourceBarrier(1,&b); };
++    g.list->EndQuery(g.tsHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,0);
++    for(int i=0;i<batch;++i){ g.list->Dispatch(1,1,1); uav(outBuf.Get()); uav(memBuf.Get()); }
++    g.list->EndQuery(g.tsHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,1);
++    g.list->ResolveQueryData(g.tsHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,0,2,g.tsReadback.Get(),0);
++    Check(g.list->Close(),"CloseList");
++    auto t0=Clock::now(); ID3D12CommandList* ls[]={g.list.Get()}; g.queue->ExecuteCommandLists(1,ls); Wait(g); auto t1=Clock::now();
++    R.batchWallMs=Ms(t0,t1);
++    UINT64 ts[2]={}; void* tm=nullptr; D3D12_RANGE rr{0,sizeof(ts)}, rz{0,0}; if(SUCCEEDED(g.tsReadback->Map(0,&rr,&tm))){ memcpy(ts,tm,sizeof(ts)); g.tsReadback->Unmap(0,&rz); }
++    R.batchGpuMs=(g.tsFreq>0&&ts[1]>ts[0])?((double)(ts[1]-ts[0])*1000.0/(double)g.tsFreq):R.batchWallMs;
++    auto outState=Readback(g,outBuf.Get(),outBytes,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
++    rdna2::WaveState gs{}; ApplyOut(gs,outState,R.status,R.steps);
++    R.s0=gs.sgpr[0]; R.v1All55=true; for(int l=0;l<64;++l) if(rdna2::vgpr(gs,l,1)!=55u) R.v1All55=false;
++    R.ok=true; return R;
++}
++
+ struct Workload {
+     std::string name, category;
+     int instLen=0; int waves=1; // waves = sequential dispatch count for scale
+@@ -687,6 +725,59 @@ static int RunTranslatorShaped(Gpu& g, const std::string& outDir, int runs){
+ }
+ 
+ // ===================== PHASE 4: XCL COMPARISON PREP =====================
++static int RunXclCompareBatch(Gpu& g, const std::string& outDir, const std::vector<int>& batches, int trials){
++    MkdirP((outDir+"/xcl_compare_batch").c_str());
++    std::ofstream log(outDir+"/console.log", std::ios::app|std::ios::binary);
++    auto L=[&](const std::string& s){ std::cout<<s<<std::endl; log<<s<<std::endl; };
++    L("=== XCL COMPARE BATCH (standalone interpreter) ===");
++    L("TimestampFrequencyHz: "+std::to_string(g.tsFreq));
++    // Same 7-instruction loop prefix as gpu_scalar_loop_and_scc
++    std::vector<rdna2::Inst> prog;
++    auto mk=[&](rdna2::Op op,uint8_t dst,uint16_t src0f,uint8_t src1,int16_t simm=0){ rdna2::Inst i{}; i.op=op; i.dst=dst; i.src0_full=src0f; i.src0=(uint8_t)(src0f&0xFF); i.src1=src1; i.simm16=simm; prog.push_back(i); };
++    mk(rdna2::Op::S_MOV_B32,0,128,0);
++    mk(rdna2::Op::S_MOV_B32,1,138,0);
++    mk(rdna2::Op::S_ADD_U32,0,0,1);
++    mk(rdna2::Op::S_SUB_U32,1,1,129);
++    mk(rdna2::Op::S_CMP_LG_U32,0,1,128);
++    mk(rdna2::Op::S_CBRANCH_SCC1,0,0,0,-4);
++    mk(rdna2::Op::V_MOV_B32,1,0,0);
++    mk(rdna2::Op::S_ENDPGM,0,0,0);
++    rdna2::WaveState init{}; init.exec=0xFFFFFFFFFFFFFFFFull;
++    rdna2::WaveState cpu=init; std::vector<uint32_t> cpuMem(256,0);
++    auto rc=rdna2::runCpuReference(cpu,prog,cpuMem,100000);
++    bool cpuOk=(rc==rdna2::RefResult::Ok); bool cpuV1All55=true; for(int l=0;l<64;++l) if(rdna2::vgpr(cpu,l,1)!=55u) cpuV1All55=false;
++    L("CPU ref: rc="+std::to_string((int)rc)+" s0="+std::to_string(cpu.sgpr[0])+" v1_all_55="+(cpuV1All55?"1":"0"));
++    std::string hlsl=InterpreterHlsl(); std::string err; double dxMs=0; auto dxil=Compile(hlsl,L"interpreter.hlsl",dxMs,err);
++    if(!dxil){ L("DXC FAIL: "+err); return 1; }
++    D3D12_COMPUTE_PIPELINE_STATE_DESC pd{}; pd.pRootSignature=g.rsInterp.Get(); pd.CS={dxil->GetBufferPointer(),dxil->GetBufferSize()};
++    ComPtr<ID3D12PipelineState> pso; auto tps0=Clock::now(); Check(g.device->CreateComputePipelineState(&pd,IID_PPV_ARGS(&pso)),"PSO"); auto tps1=Clock::now(); double psoMs=Ms(tps0,tps1);
++    auto packed=PackProgram(prog); auto initS=MakeInitState(init); RunCfg cfg; cfg.maxSteps=100000; cfg.memWords=256;
++    // warmup
++    RunInterpBatch(g,pso.Get(),packed,initS,{},cfg,10);
++    std::ofstream csv(outDir+"/xcl_compare_batch/standalone_batch.csv", std::ios::binary);
++    csv<<"batch,trial,batch_gpu_ms,batch_wall_ms,per_dispatch_gpu_ms,status,s0,v1_all_55,ok\n";
++    std::ostringstream js; js<<"{\n  \"phase\":\"standalone_xcl_compare_batch\",\n  \"tsFreqHz\":"<<g.tsFreq<<",\n  \"dxcMs\":"<<dxMs<<",\n  \"psoMs\":"<<psoMs<<",\n  \"trials\":"<<trials<<",\n  \"cpuRef\":{\"ok\":"<<(cpuOk?"true":"false")<<",\"s0\":"<<cpu.sgpr[0]<<",\"v1All55\":"<<(cpuV1All55?"true":"false")<<"},\n  \"batches\":[\n";
++    int failures=0;
++    for(size_t bi=0;bi<batches.size();++bi){ int b=batches[bi];
++        std::vector<double> batchMs, perMs; int pass=0;
++        for(int t=0;t<trials;++t){
++            auto r=RunInterpBatch(g,pso.Get(),packed,initS,{},cfg,b);
++            bool ok=r.ok && r.status==1 && r.s0==55 && r.v1All55;
++            if(ok) pass++; else failures++;
++            double per=r.batchGpuMs/(double)b;
++            batchMs.push_back(r.batchGpuMs); perMs.push_back(per);
++            csv<<b<<","<<t<<","<<r.batchGpuMs<<","<<r.batchWallMs<<","<<per<<","<<r.status<<","<<r.s0<<","<<(r.v1All55?1:0)<<","<<(ok?1:0)<<"\n";
++        }
++        auto sb=Calc(batchMs); auto sp=Calc(perMs);
++        L("batch="+std::to_string(b)+" trials="+std::to_string(trials)+" pass="+std::to_string(pass)+"/"+std::to_string(trials)+" batchMedMs="+std::to_string(sb.median)+" perDispatchMedMs="+std::to_string(sp.median));
++        js<<"    {\"batch\":"<<b<<",\"pass\":"<<pass<<",\"batchGpuMsMedian\":"<<sb.median<<",\"batchGpuMsP95\":"<<sb.p95<<",\"batchGpuMsMin\":"<<sb.minv<<",\"batchGpuMsMax\":"<<sb.maxv<<",\"perDispatchGpuMsMedian\":"<<sp.median<<",\"perDispatchGpuMsP95\":"<<sp.p95<<",\"perDispatchGpuMsMin\":"<<sp.minv<<",\"perDispatchGpuMsMax\":"<<sp.maxv<<" }"<<(bi+1<batches.size()?",":"")<<"\n";
++    }
++    js<<"  ]\n}\n";
++    std::ofstream jf(outDir+"/xcl_compare_batch/standalone_batch.json", std::ios::binary); jf<<js.str();
++    L("Wrote "+outDir+"/xcl_compare_batch/standalone_batch.json");
++    return failures;
++}
++
+ static int RunXclCompare(Gpu& g, const std::string& outDir, int runs){
+     std::ofstream log(outDir+"/xcl_compare.log", std::ios::binary);
+     auto L=[&](const std::string& s){ std::cout<<s<<"\n"; log<<s<<"\n"; };
+@@ -776,14 +867,16 @@ static void ListAdaptersCli(){
+ }
+ 
+ int main(int argc,char** argv){
+-    std::string mode="all"; std::string outDir="results"; int adapterIndex=-1; int runs=10;
++    std::string mode="all"; std::string outDir="results"; int adapterIndex=-1; int runs=10; std::vector<int> batches; int trials=30;
+     for(int i=1;i<argc;++i){ std::string a=argv[i];
+         if(a=="--mode" && i+1<argc) mode=argv[++i];
+         else if(a=="--out" && i+1<argc) outDir=argv[++i];
+         else if(a=="--adapter" && i+1<argc) adapterIndex=std::atoi(argv[++i]);
+         else if(a=="--runs" && i+1<argc) runs=std::max(1,std::atoi(argv[++i]));
++        else if(a=="--batch" && i+1<argc){ std::string bs=argv[++i]; size_t p=0; while(p<bs.size()){ size_t c=bs.find(',',p); std::string t=bs.substr(p,(c==std::string::npos?bs.size():c)-p); if(!t.empty()) batches.push_back(std::max(1,std::atoi(t.c_str()))); if(c==std::string::npos) break; p=c+1; } }
++        else if(a=="--trials" && i+1<argc) trials=std::max(1,std::atoi(argv[++i]));
+         else if(a=="--list-adapters"){ ListAdaptersCli(); return 0; }
+-        else if(a=="--help"||a=="-h"){ std::cout<<"Usage: wa.exe --mode all|perf|cold-b|translator|xcl-compare --out <dir> --adapter <n> --runs <n> [--list-adapters]\n"; return 0; }
++        else if(a=="--help"||a=="-h"){ std::cout<<"Usage: wa.exe --mode all|perf|cold-b|translator|xcl-compare|xcl-compare-batch --out <dir> --adapter <n> --runs <n> --batch 100,1000,10000 --trials 30 [--list-adapters]\n"; return 0; }
+     }
+     if(mode=="list-adapters"){ ListAdaptersCli(); return 0; }
+     MkdirP(outDir.c_str());
+@@ -828,7 +921,10 @@ int main(int argc,char** argv){
+     if(mode=="all" || mode=="translator"){
+         failures += RunTranslatorShaped(g,outDir,std::max(3,std::min(runs,5)));
+     }
+-    if(mode=="all" || mode=="xcl-compare"){
++    if(mode=="xcl-compare-batch" || (mode=="xcl-compare" && !batches.empty())){
++        if(batches.empty()) batches={100,1000,10000};
++        failures += RunXclCompareBatch(g,outDir,batches,trials);
++    } else if(mode=="all" || mode=="xcl-compare"){
+         failures += RunXclCompare(g,outDir,std::max(5,runs));
+     }
+     L("DONE failures="+std::to_string(failures));

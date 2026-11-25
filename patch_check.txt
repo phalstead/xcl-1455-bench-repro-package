@@ -1,0 +1,3 @@
+﻿Patch applicability check (2026-11-24, fresh shallow clones, read-only apply --check)
+XCL: git init/fetch --depth 1 origin 4178e888c0b5be50a2887eda45cdb832763b68a4; git checkout FETCH_HEAD => 4178e88; git apply --check xcl-1455-bench-instrumentation.patch => EXIT=0
+Harness: git clone --depth 1 ... phalstead/xcl-rdna2-gpu-interpreter-bench; checkout ee724e3; git apply --check standalone-batch-instrumentation.patch => EXIT=0

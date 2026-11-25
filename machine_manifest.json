@@ -1,0 +1,26 @@
+﻿{
+  "date": "2026-11-24",
+  "machine": {
+    "cpu": "Intel i9-11900KF",
+    "ram_gb": 32,
+    "os": "Windows 11 25H2 build 26200",
+    "gpu": "NVIDIA GeForce RTX 4080 16GB",
+    "gpu_driver": "32.0.16.2124 (621.24)",
+    "d3d12_timestamp_freq_hz": 1000000000
+  },
+  "toolchain": {
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+    "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
+    "rustup_toolchain": "stable-x86_64-pc-windows-msvc (default)",
+    "msvc": "Visual Studio Build Tools / vcvars64 (vswhere-detected)",
+    "windows_sdk": "10.0.26100.0",
+    "dxc": "dxcompiler.dll 1.8.2502.11; dxil.dll 1.8(1.8.2502.11)"
+  },
+  "baselines": {
+    "xcl_repo": "https://github.com/xcl-dev/xcl",
+    "xcl_sha": "4178e888c0b5be50a2887eda45cdb832763b68a4",
+    "harness_repo": "https://github.com/phalstead/xcl-rdna2-gpu-interpreter-bench",
+    "harness_sha": "ee724e3d141ada87f3d67de672ecdacf7e98cbf7",
+    "mission11_evidence": "local evidence dir (not included in public package)"
+  }
+}

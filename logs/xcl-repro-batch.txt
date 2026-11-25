@@ -1,0 +1,216 @@
+cargo :    Compiling proc-macro2 v1.0.107
+At line:1 char:423
++ ... $env:PATH"; cargo test -p xcl gpu_scalar_loop_and_scc_timing_batch -- ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling proc-macro2 v1.0.107:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling windows-link v0.2.1
+   Compiling serde_core v1.0.229
+   Compiling windows_x86_64_msvc v0.52.6
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+   Compiling libc v0.2.191
+   Compiling winapi v0.3.9
+   Compiling version_check v0.9.5
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling bitflags v1.3.2
+   Compiling serde_json v1.0.154
+   Compiling winnow v1.0.5
+   Compiling windows-result v0.4.1
+   Compiling windows-strings v0.5.1
+   Compiling windows-threading v0.2.1
+   Compiling typenum v1.20.1
+   Compiling memchr v2.8.3
+   Compiling adler2 v2.0.1
+   Compiling generic-array v0.14.9
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling slice-pool2 v0.4.3
+   Compiling cc v1.11.2
+   Compiling itoa v1.0.19
+   Compiling xcl v0.1.0 (<PACKAGE_ROOT>\xcl-repro\crates\xcl)
+   Compiling windows-targets v0.52.6
+   Compiling cfg-if v1.0.5
+   Compiling windows-sys v0.52.0
+   Compiling once_cell v1.21.4
+   Compiling toml_writer v1.2.0+spec-1.1.0
+   Compiling miniz_oxide v0.9.1
+   Compiling windows-sys v0.61.2
+   Compiling region v3.0.2
+   Compiling syn v2.0.119
+   Compiling syn v3.0.10
+   Compiling mmap-fixed-fixed v0.1.3
+   Compiling libudis86-sys v0.2.1
+   Compiling toml_datetime v1.1.3+spec-1.1.0
+   Compiling serde_spanned v1.1.3
+   Compiling toml v1.2.1+spec-1.1.0
+   Compiling retour v0.3.1
+   Compiling serde_derive v1.0.229
+   Compiling windows-interface v0.59.3
+   Compiling windows-implement v0.60.2
+   Compiling windows-core v0.62.2
+   Compiling windows-collections v0.3.2
+   Compiling windows-future v0.3.2
+   Compiling windows-numerics v0.3.1
+   Compiling windows v0.62.2
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for 
+consistency
+    --> crates\xcl\src\hle\d3d12x\real.rs:3380:41
+     |
+3380 |     let injected = heap && INJECTED_OOM.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| 
+n.checked_sub(1)).is_ok();
+     |                                         ^^^^^^^^^^^^
+     |
+     = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+     |
+3380 -     let injected = heap && INJECTED_OOM.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| 
+n.checked_sub(1)).is_ok();
+3380 +     let injected = heap && INJECTED_OOM.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| 
+n.checked_sub(1)).is_ok();
+     |
+
+warning: use of deprecated method `std::sync::atomic::Atomic::<u32>::fetch_update`: renamed to `try_update` for 
+consistency
+   --> crates\xcl\src\hle\xgameruntime\mod.rs:547:27
+    |
+547 |         let _ = USER.refs.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| 
+Some(v.saturating_sub(1).max(1)));
+    |                           ^^^^^^^^^^^^
+    |
+help: replace the use of the deprecated method
+    |
+547 -         let _ = USER.refs.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| 
+Some(v.saturating_sub(1).max(1)));
+547 +         let _ = USER.refs.try_update(Ordering::AcqRel, Ordering::Acquire, |v| Some(v.saturating_sub(1).max(1)));
+    |
+
+warning: `xcl` (lib) generated 2 warnings (run `cargo fix --lib -p xcl` to apply 2 suggestions)
+warning: `xcl` (lib test) generated 2 warnings (2 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 24s
+     Running unittests src\lib.rs (target\debug\build\xcl/4ba1c5819800d115\out\xcl-4ba1c5819800d115.exe)
+
+running 1 test
+xcl: DXC: dxcompiler 1.8.2502.11 (23992152), dxil 1.8.2502.11, from C:\Program Files (x86)\Windows 
+Kits\10\bin\10.0.26100.0\x64
+XCL_BATCH_JSON_BEGIN
+{"translateMs":2.5499,"compileMs":22.3164,"trials":30,"batches":[
+  {"batch":1,"tsFreqHz":1000000000,"batchMsMedian":0.001024,"batchMsP95":0.002048,"batchMsMin":0.001024,"batchMsMax":0.003072,"batchMsMean":0.001467733333333334,"perDispatchMsMedian":0.001024,"perDispatchMsP95":0.002048,"perDispatchMsMean":0.001467733333333334,"rawBatchMs":[0.003072, 0.001024, 0.002048, 0.001024, 0.001024, 0.002048, 0.001024, 0.002048, 0.001024, 0.002048, 0.001024, 0.002048, 0.001024, 0.001024, 0.001024, 0.001024, 0.001024, 0.002048, 0.001024, 0.002048, 0.001024, 0.002048, 0.001024, 0.001024, 0.001024, 0.002048, 0.001024, 0.002048, 0.001024, 0.002048]},
+  {"batch":100,"tsFreqHz":1000000000,"batchMsMedian":0.115712,"batchMsP95":0.116736,"batchMsMin":0.115712,"batchMsMax":0.11776,"batchMsMean":0.11622400000000001,"perDispatchMsMedian":0.00115712,"perDispatchMsP95":0.00116736,"perDispatchMsMean":0.0011622400000000001,"rawBatchMs":[0.11776, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.116736, 0.115712, 0.115712]},
+  {"batch":1000,"tsFreqHz":1000000000,"batchMsMedian":1.170432,"batchMsP95":1.38752,"batchMsMin":1.160192,"batchMsMax":1.522688,"batchMsMean":1.2614997333333333,"perDispatchMsMedian":0.001170432,"perDispatchMsP95":0.0013875200000000002,"perDispatchMsMean":0.0012614997333333334,"rawBatchMs":[1.170432, 1.161216, 1.160192, 1.160192, 1.161216, 1.160192, 1.383424, 1.375232, 1.160192, 1.160192, 1.161216, 1.160192, 1.160192, 1.3824, 1.368064, 1.160192, 1.161216, 1.160192, 1.161216, 1.38752, 1.371136, 1.160192, 1.362944, 1.347584, 1.344512, 1.330176, 1.352704, 1.355776, 1.522688, 1.3824]},
+  {"batch":10000,"tsFreqHz":1000000000,"batchMsMedian":12.256256,"batchMsP95":13.754368,"batchMsMin":11.8272,"batchMsMax":13.760512,"batchMsMean":12.611618133333332,"perDispatchMsMedian":0.0012256256000000001,"perDispatchMsP95":0.0013754368,"perDispatchMsMean":0.0012611618133333332,"rawBatchMs":[12.43136, 13.754368, 13.760512, 13.612032, 13.722624, 13.633536, 13.661184, 13.668352, 13.671424, 12.20096, 12.234752, 12.198912, 12.2624, 12.22144, 12.14976, 12.274688, 12.203008, 12.17536, 12.256256, 12.172288, 12.29312, 12.205056, 12.228608, 12.196864, 12.246016, 12.280832, 12.110848, 12.237824, 12.45696, 11.8272]}
+]}
+XCL_BATCH_JSON_END
+test gpu::recomp::tests::gpu_scalar_loop_and_scc_timing_batch ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 864 filtered out; finished in 1.30s
+
+     Running unittests src\main.rs (target\debug\build\xcl/2b1be2deab5a0231\out\xcl-2b1be2deab5a0231.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\bcpack_parity.rs (target\debug\build\xcl/26104d99a9c5b73c\out\bcpack_parity-26104d99a9c5b73c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\console_dlls_e2e.rs 
+(target\debug\build\xcl/8fc85d1148bde089\out\console_dlls_e2e-8fc85d1148bde089.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests\console_shaders.rs 
+(target\debug\build\xcl/6fc310daff0e71f6\out\console_shaders-6fc310daff0e71f6.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests\disasm_e2e.rs (target\debug\build\xcl/8f39c7393d05080c\out\disasm_e2e-8f39c7393d05080c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\e2e.rs (target\debug\build\xcl/e06af0a306afb520\out\e2e-e06af0a306afb520.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests\gpu_compute_e2e.rs 
+(target\debug\build\xcl/0e43a92febc0475b\out\gpu_compute_e2e-0e43a92febc0475b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests\gpu_pso_e2e.rs (target\debug\build\xcl/fd8010c608c55dbf\out\gpu_pso_e2e-fd8010c608c55dbf.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests\heap_probe.rs (target\debug\build\xcl/fde8b3cfc28f6183\out\heap_probe-fde8b3cfc28f6183.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests\low_va.rs (target\debug\build\xcl/b850df9b05ae379a\out\low_va-b850df9b05ae379a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\pls_quota.rs (target\debug\build\xcl/6fcff818db935337\out\pls_quota-6fcff818db935337.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\predication_e2e.rs 
+(target\debug\build\xcl/811d784839e49c5d\out\predication_e2e-811d784839e49c5d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\rpf_e2e.rs (target\debug\build\xcl/6462c60f24c36cd7\out\rpf_e2e-6462c60f24c36cd7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\shaders_e2e.rs (target\debug\build\xcl/666e7ad0ad871aff\out\shaders_e2e-666e7ad0ad871aff.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests\sparse_reinit.rs (target\debug\build\xcl/c9837183666237e6\out\sparse_reinit-c9837183666237e6.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\texture_states.rs (target\debug\build\xcl/349099ec8b7eb997\out\texture_states-349099ec8b7eb997.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\xg_oracle.rs (target\debug\build\xcl/03b99d6a2009daa0\out\xg_oracle-03b99d6a2009daa0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+

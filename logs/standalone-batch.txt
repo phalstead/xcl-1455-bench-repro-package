@@ -1,0 +1,15 @@
+Mode: xcl-compare-batch
+Out: <PACKAGE_ROOT>\results\standalone_batch
+Runs: 10
+Adapter: NVIDIA GeForce RTX 4080
+Driver: 32.0.16.2124
+TSFreq: 1000000000
+VRAM: 16048MB
+=== XCL COMPARE BATCH (standalone interpreter) ===
+TimestampFrequencyHz: 1000000000
+CPU ref: rc=0 s0=55 v1_all_55=1
+batch=100 trials=30 pass=30/30 batchMedMs=5.854208 perDispatchMedMs=0.058542
+batch=1000 trials=30 pass=30/30 batchMedMs=55.611392 perDispatchMedMs=0.055611
+batch=10000 trials=30 pass=30/30 batchMedMs=558.384128 perDispatchMedMs=0.055838
+Wrote <PACKAGE_ROOT>\results\standalone_batch/xcl_compare_batch/standalone_batch.json
+DONE failures=0

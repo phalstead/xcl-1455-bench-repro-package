@@ -1,0 +1,13 @@
+{
+  "phase":"standalone_xcl_compare_batch",
+  "tsFreqHz":1000000000,
+  "dxcMs":100.127,
+  "psoMs":129.756,
+  "trials":30,
+  "cpuRef":{"ok":true,"s0":55,"v1All55":true},
+  "batches":[
+    {"batch":100,"pass":30,"batchGpuMsMedian":5.85421,"batchGpuMsP95":6.26995,"batchGpuMsMin":5.30637,"batchGpuMsMax":6.27712,"perDispatchGpuMsMedian":0.0585421,"perDispatchGpuMsP95":0.0626995,"perDispatchGpuMsMin":0.0530637,"perDispatchGpuMsMax":0.0627712 },
+    {"batch":1000,"pass":30,"batchGpuMsMedian":55.6114,"batchGpuMsP95":55.9749,"batchGpuMsMin":55.2417,"batchGpuMsMax":56.7112,"perDispatchGpuMsMedian":0.0556114,"perDispatchGpuMsP95":0.0559749,"perDispatchGpuMsMin":0.0552417,"perDispatchGpuMsMax":0.0567112 },
+    {"batch":10000,"pass":30,"batchGpuMsMedian":558.384,"batchGpuMsP95":559.252,"batchGpuMsMin":544.797,"batchGpuMsMax":559.898,"perDispatchGpuMsMedian":0.0558384,"perDispatchGpuMsP95":0.0559252,"perDispatchGpuMsMin":0.0544797,"perDispatchGpuMsMax":0.0559898 }
+  ]
+}

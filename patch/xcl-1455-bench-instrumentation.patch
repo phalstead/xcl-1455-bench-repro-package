@@ -1,0 +1,167 @@
+diff --git a/crates/xcl/src/gpu/recomp/runner.rs b/crates/xcl/src/gpu/recomp/runner.rs
+index f647dbd..cf3624b 100644
+--- a/crates/xcl/src/gpu/recomp/runner.rs
++++ b/crates/xcl/src/gpu/recomp/runner.rs
+@@ -607,6 +607,109 @@ pub fn run_with_statics(
+     }
+ }
+ 
++/// Run `trials` batches of `batch` dispatches. Each batch is bracketed by two GPU timestamps.
++/// Returns (last result, per-trial batch GPU ms, timestamp_frequency_hz).
++pub fn run_timed_batch(dxil: &[u8], state: &KernelState, mem: &[u32], batch: usize, trials: usize) -> Result<(KernelResult, Vec<f64>, u64), String> {
++    let mut g = GPU.lock().unwrap();
++    let gpu = g.get_or_insert_with(init).as_mut().map_err(|x| x.clone())?;
++    let mut io: Vec<u32> = state.sgpr.clone();
++    io.resize(KERNEL_SGPRS, 0);
++    io[KERNEL_SCC_SLOT] = state.scc;
++    for lane in 0..KERNEL_LANES {
++        let mut regs = state.vgpr.get(lane).cloned().unwrap_or_default();
++        regs.resize(KERNEL_VGPRS, 0);
++        io.extend_from_slice(&regs);
++    }
++    let mem_len = mem.len().max(64);
++    let batch = batch.max(1);
++    let trials = trials.max(1);
++    unsafe {
++        let dev = &gpu.dev;
++        let rs = &gpu.rs;
++        let pso: ID3D12PipelineState = dev
++            .CreateComputePipelineState(&D3D12_COMPUTE_PIPELINE_STATE_DESC {
++                pRootSignature: transmute_copy(rs),
++                CS: D3D12_SHADER_BYTECODE { pShaderBytecode: dxil.as_ptr() as _, BytecodeLength: dxil.len() },
++                ..Default::default()
++            })
++            .map_err(|x| format!("CreateComputePipelineState: {x}"))?;
++        let io_bytes = (io.len() * 4) as u64;
++        let res_bytes = (KERNEL_RES_DWORDS * 4) as u64;
++        let mem_bytes = (mem_len * 4) as u64;
++        let upload = buffer(dev, io_bytes + mem_bytes, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, false)?;
++        let io_buf = buffer(dev, io_bytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, true)?;
++        let mem_buf = buffer(dev, mem_bytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, true)?;
++        let res_buf = buffer(dev, res_bytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, true)?;
++        let readback = buffer(dev, res_bytes + mem_bytes, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST, false)?;
++        let mut p = std::ptr::null_mut();
++        upload.Map(0, None, Some(&mut p)).map_err(e)?;
++        std::ptr::copy_nonoverlapping(io.as_ptr(), p as *mut u32, io.len());
++        let mut m = mem.to_vec();
++        m.resize(mem_len, 0);
++        std::ptr::copy_nonoverlapping(m.as_ptr(), (p as *mut u32).add(io.len()), m.len());
++        upload.Unmap(0, None);
++        let alloc: ID3D12CommandAllocator = dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT).map_err(e)?;
++        let list: ID3D12GraphicsCommandList = dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &alloc, &pso).map_err(e)?;
++        list.CopyBufferRegion(&io_buf, 0, &upload, 0, io_bytes);
++        list.CopyBufferRegion(&mem_buf, 0, &upload, io_bytes, mem_bytes);
++        list.ResourceBarrier(&[
++            transition(&io_buf, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
++            transition(&mem_buf, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
++            transition(&res_buf, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
++        ]);
++        let bound = bind_resources(dev, &list, &[], &[])?;
++        list.SetDescriptorHeaps(&[Some(bound._heaps[0].clone()), Some(bound._heaps[1].clone())]);
++        list.SetComputeRootSignature(rs);
++        list.SetComputeRootUnorderedAccessView(0, io_buf.GetGPUVirtualAddress());
++        list.SetComputeRootUnorderedAccessView(1, res_buf.GetGPUVirtualAddress());
++        list.SetComputeRootUnorderedAccessView(2, mem_buf.GetGPUVirtualAddress());
++        let stamps = 2 * trials as u32;
++        let mut h: Option<ID3D12QueryHeap> = None;
++        dev.CreateQueryHeap(&D3D12_QUERY_HEAP_DESC { Type: D3D12_QUERY_HEAP_TYPE_TIMESTAMP, Count: stamps, NodeMask: 0 }, &mut h).map_err(e)?;
++        let heap = h.ok_or("CreateQueryHeap")?;
++        let qread = buffer(dev, stamps as u64 * 8, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST, false)?;
++        for t in 0..trials as u32 {
++            if t > 0 { list.ResourceBarrier(&[uav_barrier(&mem_buf), uav_barrier(&io_buf), uav_barrier(&res_buf)]); }
++            list.EndQuery(&heap, D3D12_QUERY_TYPE_TIMESTAMP, 2 * t);
++            for _ in 0..batch {
++                list.Dispatch(1, 1, 1);
++                list.ResourceBarrier(&[uav_barrier(&mem_buf), uav_barrier(&io_buf), uav_barrier(&res_buf)]);
++            }
++            list.EndQuery(&heap, D3D12_QUERY_TYPE_TIMESTAMP, 2 * t + 1);
++        }
++        list.ResolveQueryData(&heap, D3D12_QUERY_TYPE_TIMESTAMP, 0, stamps, &qread, 0);
++        list.ResourceBarrier(&[
++            transition(&res_buf, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE),
++            transition(&mem_buf, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE),
++        ]);
++        list.CopyBufferRegion(&readback, 0, &res_buf, 0, res_bytes);
++        list.CopyBufferRegion(&readback, res_bytes, &mem_buf, 0, mem_bytes);
++        list.Close().map_err(e)?;
++        gpu.queue.ExecuteCommandLists(&[Some(list.cast().map_err(e)?)]);
++        gpu.value += 1;
++        wait_for_submission(dev, &gpu.queue, &gpu.fence, gpu.value, "kernel dispatch timed batch")?;
++        let mut p = std::ptr::null_mut();
++        readback.Map(0, None, Some(&mut p)).map_err(e)?;
++        let raw = std::slice::from_raw_parts(p as *const u32, KERNEL_RES_DWORDS).to_vec();
++        let mem_out = std::slice::from_raw_parts((p as *const u32).add(KERNEL_RES_DWORDS), mem_len).to_vec();
++        readback.Unmap(0, None);
++        let hz = gpu.queue.GetTimestampFrequency().map_err(e)? as u64;
++        let hz_f = hz as f64;
++        let mut tptr = std::ptr::null_mut();
++        qread.Map(0, None, Some(&mut tptr)).map_err(e)?;
++        let ticks = std::slice::from_raw_parts(tptr as *const u64, stamps as usize);
++        let ms: Vec<f64> = ticks.chunks(2).map(|c| c[1].saturating_sub(c[0]) as f64 * 1000.0 / hz_f).collect();
++        qread.Unmap(0, None);
++        let vgpr = (0..KERNEL_LANES)
++            .map(|l| raw[KERNEL_SGPRS + l * KERNEL_VGPRS..KERNEL_SGPRS + (l + 1) * KERNEL_VGPRS].to_vec())
++            .collect();
++        drop(bound);
++        split_halves_agree(&raw)?;
++        let res = KernelResult { sgpr: raw[..KERNEL_SGPRS].to_vec(), vgpr, scc: raw[KERNEL_SCC_SLOT], raw, mem: mem_out, textures: Vec::new() };
++        Ok((res, ms, hz))
++    }
++}
++
+ /// Run a whole console program: its code region is also placed in `mem` at address 0,
+ /// so constants addressed through s_getpc_b64 are found; `extra` follows the code
+ /// (dword-aligned, at the returned offset).
+diff --git a/crates/xcl/src/gpu/recomp/tests.rs b/crates/xcl/src/gpu/recomp/tests.rs
+index 846cb5c..c3a1167 100644
+--- a/crates/xcl/src/gpu/recomp/tests.rs
++++ b/crates/xcl/src/gpu/recomp/tests.rs
+@@ -1244,6 +1244,48 @@ fn gpu_scalar_loop_and_scc() {
+     assert_eq!((r.sgpr[41], r.sgpr[42], r.sgpr[43]), (48, 33, u32::MAX), "flbit_i64 high-then-low scan");
+ }
+ 
++#[test]
++fn gpu_scalar_loop_and_scc_timing_batch() {
++    if !gpu_ready() { return; }
++    let code = prog(&[
++        ("S_MOV_B32", "ENC_SOP1", &[("SDST", 0), ("SSRC0", 128)], None),
++        ("S_MOV_B32", "ENC_SOP1", &[("SDST", 1), ("SSRC0", 138)], None),
++        ("S_ADD_U32", "ENC_SOP2", &[("SDST", 0), ("SSRC0", 0), ("SSRC1", 1)], None),
++        ("S_SUB_U32", "ENC_SOP2", &[("SDST", 1), ("SSRC0", 1), ("SSRC1", 129)], None),
++        ("S_CMP_LG_U32", "ENC_SOPC", &[("SSRC0", 1), ("SSRC1", 128)], None),
++        ("S_CBRANCH_SCC1", "ENC_SOPP", &[("SIMM16", 0xFFFC)], None),
++        ("V_MOV_B32", "ENC_VOP1", &[("VDST", 1), ("SRC0", 0)], None),
++    ]);
++    let st = KernelState::default();
++    let t0 = std::time::Instant::now();
++    let tr = super::translate(&code, &runner::options(super::Mode::Kernel)).unwrap();
++    let t_translate = t0.elapsed().as_secs_f64() * 1000.0;
++    assert!(tr.complete(), "unsupported: {:?}", tr.unsupported);
++    let t1 = std::time::Instant::now();
++    let dxil = super::dxc::compile(&tr.hlsl, "main", "cs_6_6", &[]).unwrap();
++    let t_compile = t1.elapsed().as_secs_f64() * 1000.0;
++    let _ = runner::run(&dxil, &st, &[]).unwrap(); // warmup
++    let batches = [1usize, 100, 1000, 10000];
++    let trials = 30usize;
++    println!("XCL_BATCH_JSON_BEGIN");
++    println!("{{\"translateMs\":{t_translate},\"compileMs\":{t_compile},\"trials\":{trials},\"batches\":[");
++    for (bi, &b) in batches.iter().enumerate() {
++        let (r, ms, hz) = runner::run_timed_batch(&dxil, &st, &[], b, trials).unwrap();
++        assert_eq!(r.sgpr[0], 55, "s0 batch {b}");
++        assert!(r.vgpr.iter().all(|v| v[1] == 55), "v1 batch {b}");
++        let mut v = ms.clone();
++        v.sort_by(|a,b| a.partial_cmp(b).unwrap());
++        let med=v[v.len()/2]; let p95=v[((v.len() as f64*0.95) as usize).min(v.len()-1)];
++        let min=*v.first().unwrap(); let max=*v.last().unwrap();
++        let mean=v.iter().sum::<f64>()/v.len() as f64;
++        let per_med=med/(b as f64); let per_p95=p95/(b as f64); let per_mean=mean/(b as f64);
++        let comma = if bi+1<batches.len() { "," } else { "" };
++        println!("  {{\"batch\":{b},\"tsFreqHz\":{hz},\"batchMsMedian\":{med},\"batchMsP95\":{p95},\"batchMsMin\":{min},\"batchMsMax\":{max},\"batchMsMean\":{mean},\"perDispatchMsMedian\":{per_med},\"perDispatchMsP95\":{per_p95},\"perDispatchMsMean\":{per_mean},\"rawBatchMs\":{:?}}}{comma}", ms);
++    }
++    println!("]}}");
++    println!("XCL_BATCH_JSON_END");
++}
++
+ #[test]
+ fn gpu_divergence_through_exec() {
+     if !gpu_ready() {
